@@ -45,14 +45,14 @@ class Quantize(nn.Module):
         )
         _, embed_ind = (-dist).max(1)
         embed_onehot = F.one_hot(embed_ind, self.n_embed).type(flatten.dtype)
-        embed_ind = embed_ind.view(*input.shape[:-1])
+        embed_ind = embed_ind.view(*input.shape[:-1]) # N * W * H
         quantize = self.embed_code(embed_ind)
 
         if self.training:
             self.cluster_size.data.mul_(self.decay).add_(
                 1 - self.decay, embed_onehot.sum(0)
-            )
-            embed_sum = flatten.transpose(0, 1) @ embed_onehot
+            ) # the move averaging of the total number of each class in the input.
+            embed_sum = flatten.transpose(0, 1) @ embed_onehot # this step is to reset the center of each class.
             self.embed_avg.data.mul_(self.decay).add_(1 - self.decay, embed_sum)
             n = self.cluster_size.sum()
             cluster_size = (
@@ -64,7 +64,7 @@ class Quantize(nn.Module):
         diff = (quantize.detach() - input).pow(2).mean()
         quantize = input + (quantize - input).detach()
 
-        return quantize, diff, embed_ind
+        return quantize, diff, embed_ind # 用矩阵的方式构造embedding空间，实际上整个过程看作K均值，会更好理解。
 
     def embed_code(self, embed_id):
         return F.embedding(embed_id, self.embed.transpose(0, 1))
@@ -198,10 +198,10 @@ class VQVAE(nn.Module):
         enc_b = self.enc_b(input)
         enc_t = self.enc_t(enc_b)
 
-        quant_t = self.quantize_conv_t(enc_t).permute(0, 2, 3, 1)
+        quant_t = self.quantize_conv_t(enc_t).permute(0, 2, 3, 1) # NCHW -> NHWC
         quant_t, diff_t, id_t = self.quantize_t(quant_t)
-        quant_t = quant_t.permute(0, 3, 1, 2)
-        diff_t = diff_t.unsqueeze(0)
+        quant_t = quant_t.permute(0, 3, 1, 2) # NHWC -> NCHW
+        diff_t = diff_t.unsqueeze(0) # 扩维。
 
         dec_t = self.dec_t(quant_t)
         enc_b = torch.cat([dec_t, enc_b], 1)
@@ -221,6 +221,9 @@ class VQVAE(nn.Module):
         return dec
 
     def decode_code(self, code_t, code_b):
+        """
+        利用编码采样。
+        """
         quant_t = self.quantize_t.embed_code(code_t)
         quant_t = quant_t.permute(0, 3, 1, 2)
         quant_b = self.quantize_b.embed_code(code_b)

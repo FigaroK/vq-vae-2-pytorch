@@ -1,0 +1,22 @@
+{
+        "ffhq_img_path": "/disks/disk1/fjl/HyperFace/aflw/aflw/data/aflw.sqlite",
+        "eye_img_path": "/disks/disk1/fjl/HyperFace/aflw/aflw/data/flickr",
+        "scale_size": 256
+        "after_scale_cache_path": "/disks/disk1/fjl/hyperface/aflw_cache.npz",
+        "test_rate": 0.041010499,
+        "resume_model_path": "/disks/disk1/fjl/HyperFace/alexnet_caffemodel/bvlc_alexnet.caffemodel",
+        "gpu_id": 2,
+        "n_loaders_train": 4,
+        "n_loaders_test": 1,
+        "n_epoch": 560,
+        "batchsize": 64,
+        "port_face": 8888,
+        "port_weight": 8889,
+        "port_lossgraph": 8890,
+        "port_evaluate": 8891,
+        "port_demo": 9000,
+        "outdir": "/disks/disk1/fjl/hyperface/result",
+        "outdir_pretrain": "/disks/disk1/fjl/hyperface/result_pretrain",
+        "lr": 3e-4
+        "sched": null
+}

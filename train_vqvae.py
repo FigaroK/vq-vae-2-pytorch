@@ -1,8 +1,10 @@
 import argparse
 
 import torch
+import os
 from torch import nn, optim
 from torch.utils.data import DataLoader
+import config
 
 from torchvision import datasets, transforms, utils
 
@@ -11,6 +13,7 @@ from tqdm import tqdm
 from vqvae import VQVAE
 from scheduler import CycleScheduler
 
+os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
 def train(epoch, loader, model, optimizer, scheduler, device):
     loader = tqdm(loader)
@@ -72,13 +75,15 @@ def train(epoch, loader, model, optimizer, scheduler, device):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--size', type=int, default=256)
-    parser.add_argument('--epoch', type=int, default=560)
-    parser.add_argument('--lr', type=float, default=3e-4)
-    parser.add_argument('--sched', type=str)
-    parser.add_argument('path', type=str)
+    parser.add_argument('--config', type=str, default="./config.json")
+    parser.add_argument('--resize', type=bool)
+    parser.add_argument('--visual', type=bool, default=False)
 
     args = parser.parse_args()
+    if args.visual:
+        from visdom import Visdom
+        vis = Visdom(env="vq-vae-2")
+    config.load(args.config)
 
     print(args)
 
@@ -86,26 +91,28 @@ if __name__ == '__main__':
 
     transform = transforms.Compose(
         [
-            transforms.Resize(args.size),
-            transforms.CenterCrop(args.size),
+            transforms.Resize(config.scale_size),
+            transforms.CenterCrop(config.scale_size),
             transforms.ToTensor(),
             transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
         ]
     )
-
-    dataset = datasets.ImageFolder(args.path, transform=transform)
-    loader = DataLoader(dataset, batch_size=128, shuffle=True, num_workers=4)
+    path = config.ffhq_img_path
+    if args.resize:
+        path = config.after_scale_cache_path
+    dataset = datasets.ImageFolder(path, transform=transform)
+    loader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True, num_workers=4)
 
     model = nn.DataParallel(VQVAE()).to(device)
 
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = optim.Adam(model.parameters(), lr=config.lr)
     scheduler = None
-    if args.sched == 'cycle':
+    if config.sched == 'cycle':
         scheduler = CycleScheduler(
-            optimizer, args.lr, n_iter=len(loader) * args.epoch, momentum=None
+            optimizer, config.lr, n_iter=len(loader) * config.n_epoch, momentum=None
         )
 
-    for i in range(args.epoch):
+    for i in range(config.n_epoch):
         train(i, loader, model, optimizer, scheduler, device)
         torch.save(
             model.module.state_dict(), f'checkpoint/vqvae_{str(i + 1).zfill(3)}.pt'
