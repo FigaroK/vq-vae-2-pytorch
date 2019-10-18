@@ -91,7 +91,7 @@ def train(epoch, train_loader, valid_loader, model, optimizer, scheduler, device
 
 def test(loader, model, device):
 
-    criterion = nn.MSELoss(reduction='sum')
+    criterion = nn.MSELoss(reduction='mean')
     latent_loss_weight = 0.25
 
     sample_size = 20
