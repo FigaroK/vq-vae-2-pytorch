@@ -1,7 +1,10 @@
 import os
 import pickle
+import numpy as np
 from collections import namedtuple
-
+from PIL import Image
+from multiprocessing import Pool
+import functools
 import torch
 from torch.utils.data import Dataset
 from torchvision import datasets
@@ -50,47 +53,25 @@ class LMDBDataset(Dataset):
 
         return torch.from_numpy(row.top), torch.from_numpy(row.bottom), row.filename
 
-class gaze_dataset(data.Dataset):
-    def __init__(self, h5_path_list, use_face=False, num_workers=0):
-        stats = dict(length=len(h5_path_list))
-        self.use_face = use_face
-        self.num_workers = num_workers
-        h5_path_list = list(filter(lambda x : len(x) > 5, h5_path_list))
-        ext = os.path.splitext(h5_path_list[0])[1]
-        if ext == '.npz':
-            _getfile = _getnpzfile
-        elif ext == '.h5':
-            _getfile = _geth5file
-        else:
-            raise TypeError('fileType error')
-        self.dataset = []
-        num = len(h5_path_list)
-        pool = Pool(self.num_workers)
-        cache_dataset = functools.partial(_getfile, use_face=use_face, stats=stats)
-        datasets = pool.map(cache_dataset, h5_path_list)
-        self.dataset.extend(datasets)
+class list_dataset(datasets.ImageFolder):
+    def __init__(self, paths, transform):
+        self.transform = transform
+        self.paths = paths
 
     def __getitem__(self, index):
-        f  = self.dataset[index]
-        left_eye_img = f['left_eye']
-        right_eye_img = f['right_eye']
-        left_label = f['t_left']
-        right_label = f['t_right']
-        left_headpose = f['head_pose_l']
-        right_headpose = f['head_pose_r']
-        if self.use_face:
-            face = f.get('face', None)
-            return left_eye_img, right_eye_img, left_label, right_label, left_headpose, right_headpose, face
-        else:
-            return left_eye_img, right_eye_img, left_label, right_label, left_headpose, right_headpose
+        return self.transform(_load_img(self.paths[index])), np.asarray([1])
 
     def __len__(self):
-        return len(self.dataset)
+        return len(self.paths)
 
 
 def _load_imgs(img_path, name = 'eye_image'):
     img = cv2.imread(img_path, 0)
     return np.asarray([img]).astype(np.float32)
+
+def _load_img(path):
+    img = Image.open(path)
+    return img
 
 def _geth5file(filename, use_face, stats):
     stats["length"] -= 1
@@ -120,3 +101,29 @@ def _getnpzfile(filename, use_face, stats):
         data_dict['face'] = _load_imgs(data_dict['face'], name='face')
     print(stats["length"])
     return data_dict
+
+def _split_dataset(paths_list, valid_rate=0.2):
+    if valid_rate <= 0:
+        return paths_list, None
+    len_dataset = len(paths_list)
+    n_train = int(len_dataset * (1 - valid_rate))
+    order = np.random.permutation(len_dataset)
+    train_order = order[:n_train]
+    valid_order = order[n_train:]
+    train_paths = []
+    valid_paths = []
+    for i in train_order:
+        train_paths.append(paths_list[i])
+    for i in valid_order:
+        valid_paths.append(paths_list[i])
+    return train_paths, valid_paths
+
+def _all_image_paths(path, exts=['.png', '.jpg']):
+    image_paths = []
+    for root, dirs, f in os.walk(path):
+        for img in f:
+            ext = os.path.splitext(img)[1]
+            if ext in exts and not img.startswith('.'):
+                src_path = os.path.join(root, img)
+                image_paths.append(src_path)
+    return image_paths

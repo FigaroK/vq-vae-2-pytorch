@@ -24,8 +24,8 @@ def extract(lmdb_env, loader, model, device):
             id_t = id_t.detach().cpu().numpy()
             id_b = id_b.detach().cpu().numpy()
 
-            for file, top, bottom in zip(filename, id_t, id_b):
-                row = CodeRow(top=top, bottom=bottom, filename=file)
+            for f, top, bottom in zip(filename, id_t, id_b):
+                row = CodeRow(top=top, bottom=bottom, filename=f)
                 txn.put(str(index).encode('utf-8'), pickle.dumps(row))
                 index += 1
                 pbar.set_description(f'inserted: {index}')

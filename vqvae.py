@@ -50,10 +50,10 @@ class Quantize(nn.Module):
 
         if self.training:
             self.cluster_size.data.mul_(self.decay).add_(
-                1 - self.decay, embed_onehot.sum(0)
+                (1 - self.decay) * embed_onehot.sum(0)
             ) # the move averaging of the total number of each class in the input.
             embed_sum = flatten.transpose(0, 1) @ embed_onehot # this step is to reset the center of each class.
-            self.embed_avg.data.mul_(self.decay).add_(1 - self.decay, embed_sum)
+            self.embed_avg.data.mul_(self.decay).add_((1 - self.decay)* embed_sum)
             n = self.cluster_size.sum()
             cluster_size = (
                 (self.cluster_size + self.eps) / (n + self.n_embed * self.eps) * n
