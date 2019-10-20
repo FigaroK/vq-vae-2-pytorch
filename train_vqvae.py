@@ -1,5 +1,5 @@
 import argparse
-
+import json
 import torch
 from visualize import _show_imgs, _show_loss
 import os
@@ -20,7 +20,6 @@ def train(epoch, train_loader, valid_loader, model, optimizer, scheduler, device
     global Stop_flag
     global patience
     global min_loss
-    global max_patience
     loader = tqdm(train_loader)
 
     criterion = nn.MSELoss()
@@ -56,7 +55,8 @@ def train(epoch, train_loader, valid_loader, model, optimizer, scheduler, device
             (
                 f'epoch: {epoch + 1}; mse: {recon_loss.item():.5f}; '
                 f'latent: {latent_loss.item():.3f}; avg mse: {mse_sum / mse_n:.5f}; '
-                f'lr: {lr:.5f}'
+                f'lr: {lr:.5f};'
+                f'patience: {patience};'
             )
         )
 
@@ -66,7 +66,7 @@ def train(epoch, train_loader, valid_loader, model, optimizer, scheduler, device
                 patience = 0
                 min_loss = loss
                 torch.save(
-                    model.module.state_dict(), f'/disks/disk0/fjl/ffhq/checkpoint/vqvae_{str(epoch + 1).zfill(3)}.pt'
+                    model.module.state_dict(), f'/disks/disk0/fjl/ffhq/checkpoint/{model_save_path}/vqvae_best.pt'
                 )
                 best_stats_dict['best_loss'] = loss
                 best_stats_dict['best_iter'] = iteration
@@ -77,7 +77,7 @@ def train(epoch, train_loader, valid_loader, model, optimizer, scheduler, device
                 _show_loss(vis, iteration, recon_loss, latent_loss, loss)
             if patience > max_patience:
                 Stop_flag = True
-                break
+                return
 
             # utils.save_image(
             #     out,
@@ -115,8 +115,8 @@ def test(loader, model, device):
             out, latent_loss = model(img)
             if i == 1:
                 recon_sample = out[:sample_size]
-            sum_recon_loss += criterion(out, img)
-            sum_latent_loss += latent_loss.sum()
+            sum_recon_loss += criterion(out, img) * img.shape[0]
+            sum_latent_loss += latent_loss.mean() * img.shape[0]
     recon_loss = sum_recon_loss / n_dataset
     latent_loss = sum_latent_loss / n_dataset
     loss = recon_loss + latent_loss_weight * latent_loss
@@ -158,13 +158,15 @@ if __name__ == '__main__':
     best_stats_dict = dict(best_loss=0, best_iter=0)
     if args.resize:
         path = config.after_scale_cache_path
+    model_save_path = os.path.join(f'/disks/disk0/fjl/checkpoint/{args.beta}')
+    os.mkdir(model_save_path, exist_ok=True)
     paths = _all_image_paths(path)
     train_paths, valid_paths = _split_dataset(paths)
     train_data = list_dataset(train_paths, transform)
     valid_data = list_dataset(valid_paths, transform)
     train_loader = DataLoader(train_data, batch_size=config.batch_size, shuffle=True, num_workers=5)
     valid_loader = DataLoader(valid_data, batch_size=config.batch_size, shuffle=False, num_workers=5)
-    max_patience = len(train_loader) / 50
+    max_patience = len(train_loader) / 50 * 10
     patience = 0
 
     model = nn.DataParallel(VQVAE()).to(device)
@@ -178,3 +180,11 @@ if __name__ == '__main__':
 
     for i in range(config.n_epoch):
         loss = train(i, train_loader,valid_loader, model, optimizer, scheduler, device, best_stats_dict, vis)
+        if Stop_flag:
+            with open(f"vq-vae-2_{args.beta}", 'w') as f:
+                best_stats_dict['best_loss'] = float(best_stats_dict['best_loss'].cpu().numpy())
+                best_stats_dict['best_iter'] = int(best_stats_dict['best_iter'].cpu().numpy())
+                json_data = json.dumps(best_stats_dict, sort_keys=True, indent=4, separators=(',', ': '))
+                f.write(json_data)
+                f.close()
+            break

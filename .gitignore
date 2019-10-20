@@ -1,3 +1,6 @@
+# my gitignore
+codes_dict
+sample
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

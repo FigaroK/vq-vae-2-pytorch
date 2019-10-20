@@ -8,7 +8,7 @@
         "gpu_id": 2,
         "n_loaders_train": 4,
         "n_loaders_test": 1,
-        "n_epoch": 560,
+        "n_epoch": 300,
         "batch_size": 64,
         "port_face": 8888,
         "port_weight": 8889,
