@@ -13,11 +13,16 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-
+"""
+权重归一化后的全连接层
+"""
 def wn_linear(in_dim, out_dim):
-    return nn.utils.weight_norm(nn.Linear(in_dim, out_dim))
+    return nn.utils.weight_norm(nn.Linear(in_dim, out_dim)) # 权重归一化操作
 
 
+"""
+权重归一化后的全连接层
+"""
 class WNConv2d(nn.Module):
     def __init__(
         self,
@@ -59,15 +64,25 @@ class WNConv2d(nn.Module):
 
         return out
 
-
+"""
+pad必须是偶数，指定的是该维度的首尾需要pad的行数。指定的维度从 最后一维开始。
+这里是使用0将H维的上面pad一行, 相当于将图片向下平移了一行。最后的输出为pad后的
+前两行。
+"""
 def shift_down(input, size=1):
     return F.pad(input, [0, 0, size, 0])[:, :, : input.shape[2], :]
 
 
+"""
+这里是使用0将W维的左边pad一行, 相当于将图片向下右移了一行。
+输出为pad后的前三列.
+"""
 def shift_right(input, size=1):
     return F.pad(input, [size, 0, 0, 0])[:, :, :, : input.shape[3]]
 
-
+"""
+因果卷积
+"""
 class CausalConv2d(nn.Module):
     def __init__(
         self,
@@ -81,7 +96,7 @@ class CausalConv2d(nn.Module):
         super().__init__()
 
         if isinstance(kernel_size, int):
-            kernel_size = [kernel_size] * 2
+            kernel_size = [kernel_size, kernel_size]
 
         self.kernel_size = kernel_size
 
@@ -109,16 +124,18 @@ class CausalConv2d(nn.Module):
         )
 
     def forward(self, input):
-        out = self.pad(input)
+        out = self.pad(input) # 
 
         if self.causal > 0:
-            self.conv.conv.weight_v.data[:, :, -1, self.causal :].zero_()
+            self.conv.conv.weight_v.data[:, :, -1, self.causal :].zero_() # 将卷积核最后一行后一半置为0
 
         out = self.conv(out)
 
         return out
 
-
+"""
+在最后将channel折半，相互乘后看作, 门阵列需要sigmoid
+"""
 class GatedResBlock(nn.Module):
     def __init__(
         self,
@@ -182,13 +199,13 @@ class GatedResBlock(nn.Module):
 @lru_cache(maxsize=64)
 def causal_mask(size):
     shape = [size, size]
-    mask = np.triu(np.ones(shape), k=1).astype(np.uint8).T
+    mask = np.triu(np.ones(shape), k=1).astype(np.uint8).T # 返回上三角矩阵
     start_mask = np.ones(size).astype(np.float32)
     start_mask[0] = 0
 
     return (
-        torch.from_numpy(mask).unsqueeze(0),
-        torch.from_numpy(start_mask).unsqueeze(1),
+        torch.from_numpy(mask).unsqueeze(0), # 1 x s x s
+        torch.from_numpy(start_mask).unsqueeze(1), # s x 1
     )
 
 
@@ -211,8 +228,8 @@ class CausalAttention(nn.Module):
         def reshape(input):
             return input.view(batch, -1, self.n_head, self.dim_head).transpose(1, 2)
 
-        query_flat = query.view(batch, query.shape[1], -1).transpose(1, 2)
-        key_flat = key.view(batch, key.shape[1], -1).transpose(1, 2)
+        query_flat = query.view(batch, query.shape[1], -1).transpose(1, 2) # 将每个通道flat为1维。
+        key_flat = key.view(batch, key.shape[1], -1).transpose(1, 2) # 将每个通道flat为1维。
         query = reshape(self.query(query_flat))
         key = reshape(self.key(key_flat)).transpose(2, 3)
         value = reshape(self.value(key_flat))
@@ -221,15 +238,15 @@ class CausalAttention(nn.Module):
         mask, start_mask = causal_mask(height * width)
         mask = mask.type_as(query)
         start_mask = start_mask.type_as(query)
-        attn = attn.masked_fill(mask == 0, -1e4)
+        attn = attn.masked_fill(mask == 0, -1e4) # 在mask为0的地方填0
         attn = torch.softmax(attn, 3) * start_mask
         attn = self.dropout(attn)
 
-        out = attn @ value
-        out = out.transpose(1, 2).reshape(
+        out = attn @ value # B*8*(HW)*(C/8)
+        out = out.transpose(1, 2).reshape(# B*(HW)*8*(C/8)
             batch, height, width, self.dim_head * self.n_head
-        )
-        out = out.permute(0, 3, 1, 2)
+        ) # B*H*W*C
+        out = out.permute(0, 3, 1, 2)# B*C*H*W
 
         return out
 

@@ -106,15 +106,15 @@ def _split_dataset(paths_list, valid_rate=0.2):
     if valid_rate <= 0:
         return paths_list, None
     len_dataset = len(paths_list)
-    n_train = int(len_dataset * (1 - valid_rate))
-    order = np.random.permutation(len_dataset)
-    train_order = order[:n_train]
-    valid_order = order[n_train:]
+    total_idx = np.arange(len_dataset)
+    validation_size = len_dataset * valid_rate
+    validation_idx = np.random.choice(len_dataset, validation_size, replace=False)
+    train_idx = np.setdiff1d(total_idx, validation_idx)
     train_paths = []
     valid_paths = []
-    for i in train_order:
+    for i in train_idx:
         train_paths.append(paths_list[i])
-    for i in valid_order:
+    for i in validation_idx:
         valid_paths.append(paths_list[i])
     return train_paths, valid_paths
 

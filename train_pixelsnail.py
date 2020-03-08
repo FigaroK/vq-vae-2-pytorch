@@ -1,6 +1,8 @@
 import argparse
 
 import numpy as np
+import config
+import os
 import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
@@ -70,8 +72,8 @@ class PixelTransform:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch', type=int, default=32)
-    parser.add_argument('--epoch', type=int, default=420)
-    parser.add_argument('--hier', type=str, default='top')
+    parser.add_argument('--epoch', type=int, default=200)
+    parser.add_argument('--hier', type=str, default='bottom')
     parser.add_argument('--lr', type=float, default=3e-4)
     parser.add_argument('--channel', type=int, default=256)
     parser.add_argument('--n_res_block', type=int, default=4)
@@ -83,9 +85,12 @@ if __name__ == '__main__':
     parser.add_argument('--sched', type=str)
     parser.add_argument('--ckpt', type=str)
     parser.add_argument('path', type=str)
+    parser.add_argument('--config', type=str, default="./config.json")
 
     args = parser.parse_args()
 
+    config.load(args.config)
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(config.gpu_id)
     print(args)
 
     device = 'cuda'
@@ -137,12 +142,14 @@ if __name__ == '__main__':
 
     if amp is not None:
         model, optimizer = amp.initialize(model, optimizer, opt_level=args.amp)
+    save_path = '/disks/disk2/fjl/checkpoint/vq-vae/pixelsnail'
+    os.makedirs(save_path, exist_ok=True)
 
     model = nn.DataParallel(model)
     model = model.to(device)
 
     scheduler = None
-    if args.sched == 'cycle':
+    if config.sched == 'cycle':
         scheduler = CycleScheduler(
             optimizer, args.lr, n_iter=len(loader) * args.epoch, momentum=None
         )
@@ -151,5 +158,5 @@ if __name__ == '__main__':
         train(args, i, loader, model, optimizer, scheduler, device)
         torch.save(
             {'model': model.module.state_dict(), 'args': args},
-            f'checkpoint/pixelsnail_{args.hier}_{str(i + 1).zfill(3)}.pt',
+            f'{save_path}/pixelsnail_{args.hier}_{str(i + 1).zfill(3)}.pt',
         )

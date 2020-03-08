@@ -16,7 +16,7 @@ def sample_model(model, device, batch, size, temperature, condition=None):
 
     for i in tqdm(range(size[0])):
         for j in range(size[1]):
-            out, cache = model(row[:, : i + 1, :], condition=condition, cache=cache)
+            out, cache = model(row[:, : i + 1, :], condition=condition, cache=cache) # 采样时，从第一行（第一次值都为0）开始输入，而后输入目标像素之前所有生成过的所有像素。
             prob = torch.softmax(out[:, :, i, j] / temperature, 1)
             sample = torch.multinomial(prob, 1).squeeze(-1)
             row[:, i, j] = sample
@@ -81,9 +81,12 @@ if __name__ == '__main__':
     parser.add_argument('--top', type=str)
     parser.add_argument('--bottom', type=str)
     parser.add_argument('--temp', type=float, default=1.0)
-    parser.add_argument('filename', type=str)
+    parser.add_argument('--gpu', type=str, default='1,2')
 
     args = parser.parse_args()
+
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+    filename = 
 
     model_vqvae = load_model('vqvae', args.vqvae, device)
     model_top = load_model('pixelsnail_top', args.top, device)

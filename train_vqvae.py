@@ -56,22 +56,37 @@ def train(epoch, train_loader, valid_loader, model, optimizer, scheduler, device
                 f'epoch: {epoch + 1}; mse: {recon_loss.item():.5f}; '
                 f'latent: {latent_loss.item():.3f}; avg mse: {mse_sum / mse_n:.5f}; '
                 f'lr: {lr:.5f};'
-                f'patience: {patience};'
+                # f'patience: {patience};'
             )
         )
 
         if iteration % 50 == 0:
-            out, recon_loss, latent_loss, loss = test(valid_loader, model, device)
-            if loss < min_loss:
-                patience = 0
-                min_loss = loss
+            if valid_loader is None:
+                sample = img[:sample_size]
+                model.eval()
+                with torch.no_grad():
+                    out, latent_loss = model(sample)
+                    recon_loss = criterion(out, sample)
+                    latent_loss = latent_loss.mean()
+                    loss = recon_loss + latent_loss_weight * latent_loss
+                    out = torch.cat([sample, out], 0)
                 torch.save(
-                    model.module.state_dict(), f'/disks/disk0/fjl/ffhq/checkpoint/{model_save_path}/vqvae_best.pt'
+                    model.module.state_dict(), f'{model_save_path}/vqvae_best.pt'
                 )
-                best_stats_dict['best_loss'] = loss
-                best_stats_dict['best_iter'] = iteration
+                if iteration > best_stats_dict['best_iter']:
+                    Stop_flag = True
+                    return 
             else:
-                patience += 1
+                out, recon_loss, latent_loss, loss = test(valid_loader, model, device)
+                if loss < min_loss:
+                    patience = 0
+                    min_loss = loss
+                    torch.save(
+                        model.module.state_dict(), f'{model_save_path}/vqvae_best.pt')
+                    best_stats_dict['best_loss'] = loss
+                    best_stats_dict['best_iter'] = iteration
+                else:
+                    patience += 1
             if vis:
                 _show_imgs(vis, out.cpu(), win_name = "iter", n_row=sample_size)
                 _show_loss(vis, iteration, recon_loss, latent_loss, loss)
@@ -158,14 +173,21 @@ if __name__ == '__main__':
     best_stats_dict = dict(best_loss=0, best_iter=0)
     if args.resize:
         path = config.after_scale_cache_path
-    model_save_path = os.path.join(f'/disks/disk0/fjl/checkpoint/{args.beta}')
-    os.mkdir(model_save_path, exist_ok=True)
+    model_save_path = os.path.join(f'/disks/disk2/fjl/checkpoint/vq-vae/')
+    os.makedirs(model_save_path, exist_ok=True)
     paths = _all_image_paths(path)
-    train_paths, valid_paths = _split_dataset(paths)
+    train_paths, valid_paths = _split_dataset(paths, config.test_rate)
     train_data = list_dataset(train_paths, transform)
-    valid_data = list_dataset(valid_paths, transform)
+    valid_loader = None
+    if valid_paths:
+        valid_data = list_dataset(valid_paths, transform)
+        valid_loader = DataLoader(valid_data, batch_size=config.batch_size, shuffle=False, num_workers=5)
+    else:
+        config.load('./vq-vae-2_modified_moveAve.json')
+        best_stats_dict['best_loss'] = config.best_loss
+        best_stats_dict['best_iter'] = config.best_iter
+        print(f'best_loss: {str(config.best_loss)}; best_iter: {str(config.best_iter)}')
     train_loader = DataLoader(train_data, batch_size=config.batch_size, shuffle=True, num_workers=5)
-    valid_loader = DataLoader(valid_data, batch_size=config.batch_size, shuffle=False, num_workers=5)
     max_patience = len(train_loader) / 50 * 10
     patience = 0
 
@@ -181,10 +203,11 @@ if __name__ == '__main__':
     for i in range(config.n_epoch):
         loss = train(i, train_loader,valid_loader, model, optimizer, scheduler, device, best_stats_dict, vis)
         if Stop_flag:
-            with open(f"vq-vae-2_{args.beta}", 'w') as f:
-                best_stats_dict['best_loss'] = float(best_stats_dict['best_loss'].cpu().numpy())
-                best_stats_dict['best_iter'] = int(best_stats_dict['best_iter'].cpu().numpy())
-                json_data = json.dumps(best_stats_dict, sort_keys=True, indent=4, separators=(',', ': '))
-                f.write(json_data)
-                f.close()
+            if valid_loader:
+                with open(f"vq-vae-2_{args.beta}", 'w') as f:
+                    best_stats_dict['best_loss'] = float(best_stats_dict['best_loss'].cpu().numpy())
+                    best_stats_dict['best_iter'] = int(best_stats_dict['best_iter'].cpu().numpy())
+                    json_data = json.dumps(best_stats_dict, sort_keys=True, indent=4, separators=(',', ': '))
+                    f.write(json_data)
+                    f.close()
             break
