@@ -1,6 +1,7 @@
 import os
 import pickle
 import numpy as np
+import random
 from collections import namedtuple
 from PIL import Image
 from multiprocessing import Pool
@@ -106,16 +107,9 @@ def _split_dataset(paths_list, valid_rate=0.2):
     if valid_rate <= 0:
         return paths_list, None
     len_dataset = len(paths_list)
-    total_idx = np.arange(len_dataset)
     validation_size = len_dataset * valid_rate
-    validation_idx = np.random.choice(len_dataset, validation_size, replace=False)
-    train_idx = np.setdiff1d(total_idx, validation_idx)
-    train_paths = []
-    valid_paths = []
-    for i in train_idx:
-        train_paths.append(paths_list[i])
-    for i in validation_idx:
-        valid_paths.append(paths_list[i])
+    valid_paths = random.sample(paths_list, validation_size)
+    train_paths = [ i for i in paths_list if i not in valid_paths ]
     return train_paths, valid_paths
 
 def _all_image_paths(path, exts=['.png', '.jpg']):

@@ -86,7 +86,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
-    filename = 
+    # filename = 
 
     model_vqvae = load_model('vqvae', args.vqvae, device)
     model_top = load_model('pixelsnail_top', args.top, device)
