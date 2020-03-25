@@ -1,0 +1,5 @@
+{
+    "best_iter": 10800,
+    "best_loss": 0.006304680369794369,
+    "sched": "cycle"
+}

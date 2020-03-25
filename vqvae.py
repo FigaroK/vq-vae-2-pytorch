@@ -94,18 +94,18 @@ class Encoder(nn.Module):
 
         if stride == 4:
             blocks = [
-                nn.Conv2d(in_channel, channel // 2, 4, stride=2, padding=1),
+                nn.Conv2d(in_channel, channel // 2, 4, stride=2, padding=1),# 18 * 30
                 nn.ReLU(inplace=True),
-                nn.Conv2d(channel // 2, channel, 4, stride=2, padding=1),
+                nn.Conv2d(channel // 2, channel, 4, stride=2, padding=1), # 9 * 15
                 nn.ReLU(inplace=True),
-                nn.Conv2d(channel, channel, 3, padding=1),
+                nn.Conv2d(channel, channel, 3, padding=1), # 9 * 15
             ]
 
         elif stride == 2:
             blocks = [
                 nn.Conv2d(in_channel, channel // 2, 4, stride=2, padding=1),
                 nn.ReLU(inplace=True),
-                nn.Conv2d(channel // 2, channel, 3, padding=1),
+                nn.Conv2d(channel // 2, channel, 3, padding=1), # 18 * 30
             ]
 
         for i in range(n_res_block):
@@ -167,7 +167,7 @@ class VQVAE(nn.Module):
     ):
         super().__init__()
 
-        self.enc_b = Encoder(in_channel, channel, n_res_block, n_res_channel, stride=4)
+        self.enc_b = Encoder(in_channel, channel, n_res_block, n_res_channel, stride=2)
         self.enc_t = Encoder(channel, channel, n_res_block, n_res_channel, stride=2)
         self.quantize_conv_t = nn.Conv2d(channel, embed_dim, 1)
         self.quantize_t = Quantize(embed_dim, n_embed)
@@ -185,7 +185,7 @@ class VQVAE(nn.Module):
             channel,
             n_res_block,
             n_res_channel,
-            stride=4,
+            stride=2,
         )
 
     def forward(self, input):

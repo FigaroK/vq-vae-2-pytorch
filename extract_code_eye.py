@@ -15,20 +15,20 @@ def extract(lmdb_env, loader, model, device):
     index = 0
 
     with lmdb_env.begin(write=True) as txn:
-        pbar = tqdm(loader)
+        loader = tqdm(loader)
 
-        for img, _, filename in pbar:
+    for i, (img, right_eye_img, left_label, right_label, left_headpose, right_headpose) in enumerate(loader):
             img = img.to(device)
 
             _, _, _, id_t, id_b = model.encode(img)
             id_t = id_t.detach().cpu().numpy()
             id_b = id_b.detach().cpu().numpy()
 
-            for f, top, bottom in zip(filename, id_t, id_b):
-                row = CodeRow(top=top, bottom=bottom, filename=f)
+            for f, top, bottom in zip(left_label, id_t, id_b):
+                row = CodeRow(top=top, bottom=bottom, label=f)
                 txn.put(str(index).encode('utf-8'), pickle.dumps(row))
                 index += 1
-                pbar.set_description(f'inserted: {index}')
+                loader.set_description(f'inserted: {index}')
 
         txn.put('length'.encode('utf-8'), str(index).encode('utf-8'))
 
@@ -39,21 +39,26 @@ if __name__ == '__main__':
     parser.add_argument('--ckpt', type=str)
     parser.add_argument('--name', type=str)
     parser.add_argument('path', type=str)
+    parser.add_argument('config', type=str)
 
     args = parser.parse_args()
+    config.load(args.config)
+    path = config.img_path
+    paths = glob.glob(f"{path}/*.h5")
 
     device = 'cuda'
 
-    transform = transforms.Compose(
-        [
-            # transforms.Resize(args.size),
-            # transforms.CenterCrop(args.size),
-            transforms.ToTensor(),
-            transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
-        ]
-    )
+    # transform = transforms.Compose(
+    #     [
+    #         # transforms.Resize(args.size),
+    #         # transforms.CenterCrop(args.size),
+    #         transforms.ToTensor(),
+    #         transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+    #     ]
+    # )
 
-    dataset = ImageFileDataset(args.path, transform=transform)
+    # dataset = ImageFileDataset(args.path)
+    dataset = H5_EYE_dataset(paths)
     loader = DataLoader(dataset, batch_size=512, shuffle=False, num_workers=4)
 
     model = VQVAE(in_channel=1)

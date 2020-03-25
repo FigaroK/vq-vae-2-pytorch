@@ -19,7 +19,6 @@ from torch.nn import functional as F
 def wn_linear(in_dim, out_dim):
     return nn.utils.weight_norm(nn.Linear(in_dim, out_dim)) # 权重归一化操作
 
-
 """
 权重归一化后的全连接层
 """

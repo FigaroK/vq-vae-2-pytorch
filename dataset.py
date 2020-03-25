@@ -1,5 +1,6 @@
 import os
 import pickle
+import h5py
 import numpy as np
 import random
 from collections import namedtuple
@@ -10,10 +11,24 @@ import torch
 from torch.utils.data import Dataset
 from torchvision import datasets
 import lmdb
+import math
 
 
-CodeRow = namedtuple('CodeRow', ['top', 'bottom', 'filename'])
+CodeRow = namedtuple('CodeRow', ['top', 'bottom', 'label'])
 
+def load_paths_from_txt(txt_paths):
+    paths = []
+    for txt_path in txt_paths:
+        with open(txt_path, 'r') as f:
+            data = f.read()
+            data = data.strip('\n')
+            train_list.extend(data.split('\n'))
+
+def cv2Image(x):
+    if x.ndim == 3 and x.shape[2]==3:
+        x = cv2.cvtColor(x, cv2.COLOR_BGR2GRAY)
+    x = (x / 255 - 0.5) / 0.5
+    return x[np.newaxis, :]
 
 class ImageFileDataset(datasets.ImageFolder):
     def __getitem__(self, index):
@@ -74,6 +89,9 @@ def _load_img(path):
     img = Image.open(path)
     return img
 
+def identity(x):
+    return x
+
 def _geth5file(filename, use_face, stats):
     stats["length"] -= 1
     data_dict = {}
@@ -107,7 +125,7 @@ def _split_dataset(paths_list, valid_rate=0.2):
     if valid_rate <= 0:
         return paths_list, None
     len_dataset = len(paths_list)
-    validation_size = len_dataset * valid_rate
+    validation_size = math.ceil(len_dataset * valid_rate)
     valid_paths = random.sample(paths_list, validation_size)
     train_paths = [ i for i in paths_list if i not in valid_paths ]
     return train_paths, valid_paths
@@ -121,3 +139,43 @@ def _all_image_paths(path, exts=['.png', '.jpg']):
                 src_path = os.path.join(root, img)
                 image_paths.append(src_path)
     return image_paths
+
+class H5_EYE_dataset(Dataset):
+    def __init__(self, h5_path_list, transform=cv2Image, label_trans=identity):
+        assert h5_path_list[0].endswith('.h5')
+        self.transform = transform
+        self.label_trans = label_trans
+        self.train_files = [h5py.File(file_name, 'r') for file_name in h5_path_list]
+        self.dataset = _eyediap_get_mat(self.train_files)
+    
+    def __len__(self):
+        return self.dataset[-1]
+
+    def __getitem__(self, index):
+        left = self.dataset[0][index].astype(np.float32)
+        right = self.dataset[1][index].astype(np.float32)
+        left_eye_img = self.transform(left)
+        right_eye_img = self.transform(right)
+        left_label = self.label_trans(self.dataset[2][index].astype(np.float32))
+        right_label = self.label_trans(self.dataset[3][index].astype(np.float32))
+        left_headpose = self.dataset[4][index].astype(np.float32)
+        right_headpose = self.dataset[5][index].astype(np.float32)
+        return left_eye_img, right_eye_img, left_label, right_label, left_headpose, right_headpose
+        
+
+def _eyediap_get_mat(files):
+    left_gazes = np.vstack([files[idx]['left_gaze'] for idx in range(len(files))])
+    left_headposes = np.vstack([files[idx]['left_headpose'] for idx in range(len(files))])
+    right_gazes = np.vstack([files[idx]['right_gaze'] for idx in range(len(files))])
+    right_headposes = np.vstack([files[idx]['right_headpose'] for idx in range(len(files))])
+    images_l = np.vstack([files[idx]['left_eye_img'] for idx in range(len(files))])
+    images_r = np.vstack([files[idx]['right_eye_img'] for idx in range(len(files))])
+
+    num_instances = images_l.shape[0]
+    # dimension = images_l.shape[1]
+
+    print ("%s images loaded" % (num_instances))
+    print ("shape of 'images' is %s" % (images_l.shape,))
+
+    return images_l, images_r, left_gazes, right_gazes, left_headposes, right_headposes, num_instances
+
