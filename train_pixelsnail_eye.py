@@ -24,7 +24,7 @@ def train(args, epoch, loader, model, optimizer, scheduler, device):
 
     criterion = nn.CrossEntropyLoss()
 
-    for i, (top, bottom, label) in enumerate(loader):
+    for i, (top, bottom, label, headpose) in enumerate(loader):
         model.zero_grad()
 
         top = top.to(device)
@@ -57,6 +57,7 @@ def train(args, epoch, loader, model, optimizer, scheduler, device):
                 f'acc: {accuracy:.5f}; lr: {lr:.5f}'
             )
         )
+    return loss
 
 
 class PixelTransform:
@@ -71,7 +72,7 @@ class PixelTransform:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--batch', type=int, default=32)
+    parser.add_argument('--batch', type=int, default=128)
     parser.add_argument('--epoch', type=int, default=200)
     parser.add_argument('--hier', type=str, default='top')
     parser.add_argument('--lr', type=float, default=3e-4)
@@ -82,10 +83,9 @@ if __name__ == '__main__':
     parser.add_argument('--n_cond_res_block', type=int, default=3)
     parser.add_argument('--dropout', type=float, default=0.1)
     parser.add_argument('--amp', type=str, default='O0')
-    parser.add_argument('--sched', type=str)
     parser.add_argument('--ckpt', type=str)
     parser.add_argument('path', type=str)
-    parser.add_argument('--config', type=str, default="./config.json")
+    parser.add_argument('--config', type=str, default="./config_eye.json")
 
     args = parser.parse_args()
 
@@ -108,7 +108,7 @@ if __name__ == '__main__':
 
     if args.hier == 'top':
         model = PixelSNAIL(
-            [19, 30],
+            [9, 15],
             512,
             args.channel,
             5,
@@ -121,7 +121,7 @@ if __name__ == '__main__':
 
     elif args.hier == 'bottom':
         model = PixelSNAIL(
-            [38, 60],
+            [18, 30],
             512,
             args.channel,
             5,
@@ -145,18 +145,19 @@ if __name__ == '__main__':
     save_path = '/disks/disk2/fjl/checkpoint/vq-vae/pixelsnail'
     os.makedirs(save_path, exist_ok=True)
 
-    model = nn.DataParallel(model)
-    model = model.to(device)
+    model = nn.DataParallel(model).to(device)
 
     scheduler = None
-    if config.sched == 'cycle':
-        scheduler = CycleScheduler(
-            optimizer, args.lr, n_iter=len(loader) * args.epoch, momentum=None
-        )
+    # if config.sched == 'cycle':
+    #     scheduler = CycleScheduler(
+    #         optimizer, args.lr, n_iter=len(loader) * args.epoch, momentum=None
+    #     )
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer)
 
     for i in range(args.epoch):
-        train(args, i, loader, model, optimizer, scheduler, device)
+        loss = train(args, i, loader, model, optimizer, None, device)
+        scheduler.step(loss)
         torch.save(
             {'model': model.module.state_dict(), 'args': args},
-            f'{save_path}/pixelsnail_{args.hier}_{str(i + 1).zfill(3)}.pt',
+            f'{save_path}/pixelsnail_{args.hier}_eye_{str(i + 1).zfill(3)}.pt',
         )

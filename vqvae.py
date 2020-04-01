@@ -31,22 +31,22 @@ class Quantize(nn.Module):
         self.decay = decay
         self.eps = eps
 
-        embed = torch.randn(dim, n_embed)
+        embed = torch.randn(dim, n_embed) # embeddings 64 * 512
         self.register_buffer('embed', embed)
         self.register_buffer('cluster_size', torch.zeros(n_embed))
         self.register_buffer('embed_avg', embed.clone())
 
     def forward(self, input):
-        flatten = input.reshape(-1, self.dim)
+        flatten = input.reshape(-1, self.dim) # N个词向量
         dist = (
             flatten.pow(2).sum(1, keepdim=True)
             - 2 * flatten @ self.embed
-            + self.embed.pow(2).sum(0, keepdim=True)
-        )
-        _, embed_ind = (-dist).max(1)
+            + self.embed.pow(2).sum(0, keepdim=True) # 字典里有512个词向量 最后为N x 512。
+        ) # 涉及矩阵运算时的广播
+        _, embed_ind = (-dist).max(1) # 从512个中选取最接近的。
         embed_onehot = F.one_hot(embed_ind, self.n_embed).type(flatten.dtype)
-        embed_ind = embed_ind.view(*input.shape[:-1]) # N * W * H
-        quantize = self.embed_code(embed_ind)
+        embed_ind = embed_ind.view(*input.shape[:-1]) # N * H * W
+        quantize = self.embed_code(embed_ind) # 从embedding中找到最接近的词向量
 
         if self.training:
             self.cluster_size.data.mul_(self.decay).add_(
@@ -195,6 +195,9 @@ class VQVAE(nn.Module):
         return dec, diff
 
     def encode(self, input):
+        """
+        编码一次，尺寸缩小n, n由编码器步长决定。 解码器反之依然。
+        """
         enc_b = self.enc_b(input)
         enc_t = self.enc_t(enc_b)
 
@@ -220,9 +223,9 @@ class VQVAE(nn.Module):
 
         return dec
 
-    def decode_code(self, code_t, code_b):
+    def decode_code(self, code_t, code_b): 
         """
-        利用编码采样。
+        input:整数矩阵，来自pixelNail产生。
         """
         quant_t = self.quantize_t.embed_code(code_t)
         quant_t = quant_t.permute(0, 3, 1, 2)

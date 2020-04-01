@@ -45,12 +45,13 @@ def train(epoch, train_loader, valid_loader, model, optimizer, scheduler, device
         loss.backward()
 
         if scheduler is not None:
-            scheduler.step()
+            scheduler.step(loss)
         optimizer.step()
 
-        # mse_sum += (recon_loss.item() + latent_loss.item()) * img.shape[0]
-        # mse_n += img.shape[0]
-        all_loss = recon_loss + latent_loss
+        all_loss = recon_loss + latent_loss_weight * latent_loss
+        mse_sum += all_loss * img.shape[0]
+        mse_n += img.shape[0]
+        total_loss = mse_sum /mse_n
 
         lr = optimizer.param_groups[0]['lr']
 
@@ -61,14 +62,18 @@ def train(epoch, train_loader, valid_loader, model, optimizer, scheduler, device
                 model.eval()
                 with torch.no_grad():
                     val_out, val_latent_loss = model(sample)
-                    best_stats_dict['val_recon_loss ']= criterion(out, sample)
+                    best_stats_dict['val_recon_loss']= criterion(val_out, sample)
                     best_stats_dict['val_latent_loss']= val_latent_loss.mean()
-                    best_stats_dict['val_loss'] = val_recon_loss + val_latent_loss
-                    save_out = torch.cat([sample, out], 0)
-                torch.save(
-                    model.module.state_dict(), f'{model_save_path}/vqvae_best.pt'
-                )
+                    best_stats_dict['val_loss'] = best_stats_dict['val_recon_loss'] + latent_loss_weight * best_stats_dict['val_latent_loss']
+                    save_out = torch.cat([sample, val_out], 0)
+                if best_stats_dict['val_loss'] < best_stats_dict['best_loss']:
+                    torch.save(
+                        model.module.state_dict(), f'{model_save_path}/vqvae_eye_best.pt'
+                    )
                 if iteration > best_stats_dict['best_iter']:
+                    torch.save(
+                        model.module.state_dict(), f'{model_save_path}/vqvae_eye_last.pt'
+                    )
                     Stop_flag = True
                     return 
             else:
@@ -83,7 +88,7 @@ def train(epoch, train_loader, valid_loader, model, optimizer, scheduler, device
                 else:
                     patience += 1
             if vis:
-                _show_imgs(vis, out.cpu(), win_name = "iter", n_row=sample_size)
+                _show_imgs(vis, save_out.cpu(), win_name = "iter", n_row=sample_size)
                 _show_loss(vis, iteration, val_recon_loss, val_latent_loss, val_loss)
             if patience > max_patience:
                 Stop_flag = True
@@ -101,7 +106,7 @@ def train(epoch, train_loader, valid_loader, model, optimizer, scheduler, device
         loader.set_description(
             (
                 f"epoch:{epoch + 1}; mse:({recon_loss.item():.4f} {best_stats_dict['val_recon_loss'].item():.4f});"
-                f"latent:({latent_loss.item():.4f} {best_stats_dict['val_latent_loss'].item():.4f});all:({all_loss.item():.4f} {best_stats_dict['val_loss'].item():.4f});"
+                f"latent:({latent_loss.item():.4f} {best_stats_dict['val_latent_loss'].item():.4f});all:({total_loss.item():.4f} {best_stats_dict['val_loss'].item():.4f});"
                 f"best:({best_stats_dict['best_iter']} {best_stats_dict['best_loss']:.4f})"
                 f"lr: {lr:.5f};"
                 f"patience: {patience};"
@@ -139,7 +144,7 @@ def test(loader, model, device):
     recon_loss = sum_recon_loss / n_dataset
     latent_loss = sum_latent_loss / n_dataset
     # loss = recon_loss + latent_loss_weight * latent_loss
-    loss = recon_loss + latent_loss
+    loss = recon_loss + latent_loss_weight * latent_loss
     out = torch.cat([sample, recon_sample], 0)
     return out, recon_loss, latent_loss, loss
 
@@ -205,9 +210,16 @@ if __name__ == '__main__':
         scheduler = CycleScheduler(
             optimizer, config.lr, n_iter=len(train_loader) * config.n_epoch, momentum=None
         )
+    elif config.sched == 'plateau':
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer)
 
     for i in range(config.n_epoch):
-        loss = train(i, train_loader,valid_loader, model, optimizer, scheduler, device, best_stats_dict, vis)
+        if config.sched == 'plateau':
+            print(scheduler.num_bad_epochs)
+            loss = train(i, train_loader,valid_loader, model, optimizer, None, device, best_stats_dict, vis)
+            scheduler.step(best_stats_dict["val_loss"])
+        else:
+            loss = train(i, train_loader,valid_loader, model, optimizer, scheduler, device, best_stats_dict, vis)
         if Stop_flag:
             if valid_loader:
                 stats_dict = {}

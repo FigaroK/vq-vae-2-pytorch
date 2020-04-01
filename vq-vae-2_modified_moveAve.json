@@ -1,4 +1,4 @@
 {
-        "best_iter": 50000,
-        "best_loss": 0.0058
+        "best_iter": 250000,
+        "best_loss": 0.0016
 }

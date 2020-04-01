@@ -14,7 +14,7 @@ import lmdb
 import math
 
 
-CodeRow = namedtuple('CodeRow', ['top', 'bottom', 'label'])
+CodeRow = namedtuple('CodeRow', ['top', 'bottom', 'label', 'headpose'])
 
 def load_paths_from_txt(txt_paths):
     paths = []
@@ -22,7 +22,8 @@ def load_paths_from_txt(txt_paths):
         with open(txt_path, 'r') as f:
             data = f.read()
             data = data.strip('\n')
-            train_list.extend(data.split('\n'))
+            paths.extend(data.split('\n'))
+    return paths
 
 def cv2Image(x):
     if x.ndim == 3 and x.shape[2]==3:
@@ -67,7 +68,35 @@ class LMDBDataset(Dataset):
 
             row = pickle.loads(txn.get(key))
 
-        return torch.from_numpy(row.top), torch.from_numpy(row.bottom), row.filename
+        return torch.from_numpy(row.top), torch.from_numpy(row.bottom), row.label, row.headpose
+
+# class LMDBDataset(Dataset):
+#     def __init__(self, path):
+#         self.env = lmdb.open(
+#             path,
+#             max_readers=32,
+#             readonly=True,
+#             lock=False,
+#             readahead=False,
+#             meminit=False,
+#         )
+# 
+#         if not self.env:
+#             raise IOError('Cannot open lmdb dataset', path)
+# 
+#         with self.env.begin(write=False) as txn:
+#             self.length = int(txn.get('length'.encode('utf-8')).decode('utf-8'))
+# 
+#     def __len__(self):
+#         return self.length
+# 
+#     def __getitem__(self, index):
+#         with self.env.begin(write=False) as txn:
+#             key = str(index).encode('utf-8')
+# 
+#             row = pickle.loads(txn.get(key))
+# 
+#         return torch.from_numpy(row.top), torch.from_numpy(row.bottom), row.filename
 
 class list_dataset(datasets.ImageFolder):
     def __init__(self, paths, transform):

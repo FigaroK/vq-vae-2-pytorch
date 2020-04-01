@@ -1,11 +1,13 @@
 {
         "img_path": "/disks/disk2/fjl/dataset/multi_h5",
+        "txt_path": "/disks/disk2/fjl/tools/multi_3folds_txts/synth/test_all.txt",
+        "ckpt": "/disks/disk2/fjl/checkpoint/vq-vae_cycle_eye/vqvae_best.pt",
         "test_rate": 0.01,
         "resume_model_path": " ",
-        "gpu_id": "0,1,2",
+        "gpu_id": "0,2,3",
         "n_loaders_train": 5,
         "n_loaders_test": 2,
-        "n_epoch": 560,
+        "n_epoch": 200,
         "batch_size": 512,
         "port_face": 8888,
         "port_weight": 8889,
@@ -13,6 +15,6 @@
         "port_evaluate": 8891,
         "port_demo": 9000,
         "outdir": "/disks/disk2/fjl/checkpoint/vq-vae_eye/result",
-        "lr": 3e-3,
+        "lr": 1e-3,
         "sched": "cycle"
 }

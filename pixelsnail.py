@@ -65,16 +65,14 @@ class WNConv2d(nn.Module):
 
 """
 pad必须是偶数，指定的是该维度的首尾需要pad的行数。指定的维度从 最后一维开始。
-这里是使用0将H维的上面pad一行, 相当于将图片向下平移了一行。最后的输出为pad后的
-前两行。
+这里是使用0将H维的上面pad一行, 相当于将图片向下平移了一行。
 """
 def shift_down(input, size=1):
     return F.pad(input, [0, 0, size, 0])[:, :, : input.shape[2], :]
 
 
 """
-这里是使用0将W维的左边pad一行, 相当于将图片向下右移了一行。
-输出为pad后的前三列.
+这里是使用0将W维的左边pad一行, 相当于将图片向右平移了一行。
 """
 def shift_right(input, size=1):
     return F.pad(input, [size, 0, 0, 0])[:, :, :, : input.shape[3]]
@@ -126,7 +124,7 @@ class CausalConv2d(nn.Module):
         out = self.pad(input) # 
 
         if self.causal > 0:
-            self.conv.conv.weight_v.data[:, :, -1, self.causal :].zero_() # 将卷积核最后一行后一半置为0
+            self.conv.conv.weight_v.data[:, :, -1, self.causal :].zero_() # 将卷积核最后一行后一半置为0, 向上取整。
 
         out = self.conv(out)
 
@@ -198,7 +196,7 @@ class GatedResBlock(nn.Module):
 @lru_cache(maxsize=64)
 def causal_mask(size):
     shape = [size, size]
-    mask = np.triu(np.ones(shape), k=1).astype(np.uint8).T # 返回上三角矩阵
+    mask = np.triu(np.ones(shape), k=1).astype(np.uint8).T # 返回上三角矩阵, 右上三角， k为对角线+k下元素为0。
     start_mask = np.ones(size).astype(np.float32)
     start_mask[0] = 0
 
@@ -325,6 +323,9 @@ class PixelBlock(nn.Module):
 
 
 class CondResNet(nn.Module):
+    """
+    不改变尺寸大小。
+    """
     def __init__(self, in_channel, channel, kernel_size, n_res_block):
         super().__init__()
 
@@ -368,18 +369,18 @@ class PixelSNAIL(nn.Module):
         else:
             kernel = kernel_size
 
-        self.horizontal = CausalConv2d(
+        self.horizontal = CausalConv2d( # 水平，除了第一行，卷积核的参数置零。
             n_class, channel, [kernel // 2, kernel], padding='down'
         )
-        self.vertical = CausalConv2d(
+        self.vertical = CausalConv2d( # 垂直，除了第一列，卷积核的参数置零。
             n_class, channel, [(kernel + 1) // 2, kernel // 2], padding='downright'
         )
 
-        coord_x = (torch.arange(height).float() - height / 2) / height
+        coord_x = (torch.arange(height).float() - height / 2) / height # 坐标归一化，中间为0
         coord_x = coord_x.view(1, 1, height, 1).expand(1, 1, height, width)
         coord_y = (torch.arange(width).float() - width / 2) / width
         coord_y = coord_y.view(1, 1, 1, width).expand(1, 1, height, width)
-        self.register_buffer('background', torch.cat([coord_x, coord_y], 1))
+        self.register_buffer('background', torch.cat([coord_x, coord_y], 1)) # 高宽坐标作为附加信息。
 
         self.blocks = nn.ModuleList()
 
@@ -421,7 +422,7 @@ class PixelSNAIL(nn.Module):
         vertical = shift_right(self.vertical(input))
         out = horizontal + vertical
 
-        background = self.background[:, :, :height, :].expand(batch, 2, height, width)
+        background = self.background[:, :, :height, :].expand(batch, 2, height, width) # 1 x 2 x height x width -> 32 x 2 x height x width
 
         if condition is not None:
             if 'condition' in cache:
@@ -435,7 +436,7 @@ class PixelSNAIL(nn.Module):
                     .type_as(self.background)
                 )
                 condition = self.cond_resnet(condition)
-                condition = F.interpolate(condition, scale_factor=2)
+                condition = F.interpolate(condition, scale_factor=2) # condition 发大两倍
                 cache['condition'] = condition.detach().clone()
                 condition = condition[:, :, :height, :]
 

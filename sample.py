@@ -11,6 +11,7 @@ from pixelsnail import PixelSNAIL
 
 @torch.no_grad()
 def sample_model(model, device, batch, size, temperature, condition=None):
+    model.eval()
     row = torch.zeros(batch, *size, dtype=torch.int64).to(device)
     cache = {}
 
@@ -25,18 +26,18 @@ def sample_model(model, device, batch, size, temperature, condition=None):
 
 
 def load_model(model, checkpoint, device):
-    ckpt = torch.load(os.path.join('checkpoint', checkpoint))
+    ckpt = torch.load(checkpoint)
 
     
     if 'args' in ckpt:
         args = ckpt['args']
 
     if model == 'vqvae':
-        model = VQVAE()
+        model = VQVAE(in_channel=1)
 
     elif model == 'pixelsnail_top':
         model = PixelSNAIL(
-            [32, 32],
+            [9, 15],
             512,
             args.channel,
             5,
@@ -49,7 +50,7 @@ def load_model(model, checkpoint, device):
 
     elif model == 'pixelsnail_bottom':
         model = PixelSNAIL(
-            [64, 64],
+            [18, 30],
             512,
             args.channel,
             5,
@@ -76,28 +77,29 @@ if __name__ == '__main__':
     device = 'cuda'
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--batch', type=int, default=8)
-    parser.add_argument('--vqvae', type=str)
-    parser.add_argument('--top', type=str)
-    parser.add_argument('--bottom', type=str)
+    parser.add_argument('--batch', type=int, default=16)
+    parser.add_argument('--vqvae', type=str, default="/disks/disk2/fjl/checkpoint/vq-vae_cycle_eye/vqvae_best.pt")
+    parser.add_argument('--top', type=str, default="/disks/disk2/fjl/checkpoint/vq-vae/pixelsnail/pixelsnail_top_eye_002.pt")
+    parser.add_argument('--bottom', type=str, default="/disks/disk2/fjl/checkpoint/vq-vae/pixelsnail/pixelsnail_bottom_eye_004.pt")
     parser.add_argument('--temp', type=float, default=1.0)
-    parser.add_argument('--gpu', type=str, default='1,2')
+    parser.add_argument('--gpu', type=str, default='1')
+    parser.add_argument('--filename', type=str, default='eye_epoch_2.png')
 
     args = parser.parse_args()
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
-    # filename = 
+    filename = os.path.join("./sample", args.filename)
 
     model_vqvae = load_model('vqvae', args.vqvae, device)
     model_top = load_model('pixelsnail_top', args.top, device)
     model_bottom = load_model('pixelsnail_bottom', args.bottom, device)
 
-    top_sample = sample_model(model_top, device, args.batch, [32, 32], args.temp)
+    top_sample = sample_model(model_top, device, args.batch, [9, 15], args.temp)
     bottom_sample = sample_model(
-        model_bottom, device, args.batch, [64, 64], args.temp, condition=top_sample
+        model_bottom, device, args.batch, [18, 30], args.temp, condition=top_sample
     )
 
     decoded_sample = model_vqvae.decode_code(top_sample, bottom_sample)
     decoded_sample = decoded_sample.clamp(-1, 1)
 
-    save_image(decoded_sample, args.filename, normalize=True, range=(-1, 1))
+    save_image(decoded_sample, filename, normalize=True, range=(-1, 1))
