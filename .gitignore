@@ -1,8 +1,11 @@
 # my gitignore
-codes_dict
-sample
-checkpoint
-cycle_eye
+codes_dict/
+sample/
+checkpoint/
+cycle_eye/
+log*
+lmdb/
+unity/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

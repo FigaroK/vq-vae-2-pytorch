@@ -116,7 +116,7 @@ if __name__ == '__main__':
             args.n_res_block,
             args.n_res_channel,
             dropout=args.dropout,
-            n_out_res_block=args.n_out_res_block,
+            n_out_res_block=args.n_out_res_block
         )
 
     elif args.hier == 'bottom':

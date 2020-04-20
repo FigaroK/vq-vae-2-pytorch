@@ -33,7 +33,7 @@ def load_model(model, checkpoint, device):
         args = ckpt['args']
 
     if model == 'vqvae':
-        model = VQVAE(in_channel=1)
+        model = VQVAE(in_channel=3)
 
     elif model == 'pixelsnail_top':
         model = PixelSNAIL(
@@ -77,13 +77,13 @@ if __name__ == '__main__':
     device = 'cuda'
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--batch', type=int, default=16)
-    parser.add_argument('--vqvae', type=str, default="/disks/disk2/fjl/checkpoint/vq-vae_cycle_eye/vqvae_best.pt")
-    parser.add_argument('--top', type=str, default="/disks/disk2/fjl/checkpoint/vq-vae/pixelsnail/pixelsnail_top_eye_002.pt")
-    parser.add_argument('--bottom', type=str, default="/disks/disk2/fjl/checkpoint/vq-vae/pixelsnail/pixelsnail_bottom_eye_004.pt")
+    parser.add_argument('--batch', type=int, default=8)
+    parser.add_argument('--vqvae', type=str, default="/disks/disk2/fjl/checkpoint/vq-vae_unity_unityEyes_dis_from_MPII/vqvae_best.pt")
+    parser.add_argument('--top', type=str, default="/disks/disk2/fjl/checkpoint/vq-vae/pixelsnail/unity_mpii/pixelsnail_top_eye_021.pt")
+    parser.add_argument('--bottom', type=str, default="/disks/disk2/fjl/checkpoint/vq-vae/pixelsnail/unity_mpii/pixelsnail_bottom_eye_021.pt")
     parser.add_argument('--temp', type=float, default=1.0)
-    parser.add_argument('--gpu', type=str, default='1')
-    parser.add_argument('--filename', type=str, default='eye_epoch_2.png')
+    parser.add_argument('--gpu', type=str, default='3')
+    parser.add_argument('--filename', type=str, default='unity_21_21.png')
 
     args = parser.parse_args()
 

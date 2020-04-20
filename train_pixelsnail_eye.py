@@ -54,7 +54,7 @@ def train(args, epoch, loader, model, optimizer, scheduler, device):
         loader.set_description(
             (
                 f'epoch: {epoch + 1}; loss: {loss.item():.5f}; '
-                f'acc: {accuracy:.5f}; lr: {lr:.5f}'
+                f'acc: {accuracy:.5f}; lr: {lr:.7f}'
             )
         )
     return loss
@@ -73,7 +73,7 @@ class PixelTransform:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch', type=int, default=128)
-    parser.add_argument('--epoch', type=int, default=200)
+    parser.add_argument('--epoch', type=int, default=100)
     parser.add_argument('--hier', type=str, default='top')
     parser.add_argument('--lr', type=float, default=3e-4)
     parser.add_argument('--channel', type=int, default=256)
@@ -132,6 +132,7 @@ if __name__ == '__main__':
             dropout=args.dropout,
             n_cond_res_block=args.n_cond_res_block,
             cond_res_channel=args.n_res_channel,
+            condition=True
         )
 
     if 'model' in ckpt:
@@ -142,21 +143,20 @@ if __name__ == '__main__':
 
     if amp is not None:
         model, optimizer = amp.initialize(model, optimizer, opt_level=args.amp)
-    save_path = '/disks/disk2/fjl/checkpoint/vq-vae/pixelsnail'
+    save_path = '/disks/disk2/fjl/checkpoint/vq-vae/pixelsnail/unity_mpii_all'
     os.makedirs(save_path, exist_ok=True)
 
     model = nn.DataParallel(model).to(device)
 
     scheduler = None
-    # if config.sched == 'cycle':
-    #     scheduler = CycleScheduler(
-    #         optimizer, args.lr, n_iter=len(loader) * args.epoch, momentum=None
-    #     )
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer)
+    if config.sched == 'cycle':
+        scheduler = CycleScheduler(
+            optimizer, config.lr, n_iter=len(loader) * config.n_epoch, momentum=None
+        )
+    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer)
 
-    for i in range(args.epoch):
-        loss = train(args, i, loader, model, optimizer, None, device)
-        scheduler.step(loss)
+    for i in range(config.n_epoch):
+        loss = train(args, i, loader, model, optimizer, scheduler, device)
         torch.save(
             {'model': model.module.state_dict(), 'args': args},
             f'{save_path}/pixelsnail_{args.hier}_eye_{str(i + 1).zfill(3)}.pt',

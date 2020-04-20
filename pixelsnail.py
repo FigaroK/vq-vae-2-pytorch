@@ -343,23 +343,28 @@ class CondResNet(nn.Module):
 class PixelSNAIL(nn.Module):
     def __init__(
         self,
-        shape,
-        n_class,
-        channel,
-        kernel_size,
-        n_block,
-        n_res_block,
-        res_channel,
+        shape, # 64 * 64的index矩阵
+        n_class, # 512 embedding的word数。
+        channel, # 256 中间进行相关卷积时的通道数。
+        kernel_size, # 5 * 5的卷积核
+        n_block, # 4 pixleblock的个数。
+        n_res_block, # 4残差块数量。
+        res_channel, # 256
         attention=True,
         dropout=0.1,
         n_cond_res_block=0,
         cond_res_channel=0,
         cond_res_kernel=3,
         n_out_res_block=0,
+        condition = False,
+        cond_headpose_gaze=False
     ):
         super().__init__()
 
         height, width = shape
+        self.cond_headpose_gaze = cond_headpose_gaze
+        self.condition = condition
+        self.shape = shape
 
         self.n_class = n_class
 
@@ -398,9 +403,25 @@ class PixelSNAIL(nn.Module):
             )
 
         if n_cond_res_block > 0:
-            self.cond_resnet = CondResNet(
-                n_class, cond_res_channel, cond_res_kernel, n_cond_res_block
-            )
+            if self.cond_headpose_gaze and not self.condition:
+                self.cond_resnet = CondResNet(
+                    1, cond_res_channel, cond_res_kernel, n_cond_res_block
+                )
+            elif not self.cond_headpose_gaze and self.condition:
+                self.cond_resnet = CondResNet(
+                    n_class, cond_res_channel, cond_res_kernel, n_cond_res_block
+                )
+            else:
+                self.cond_resnet = CondResNet(
+                    n_class + 1, cond_res_channel, cond_res_kernel, n_cond_res_block
+                )
+
+        if self.cond_headpose_gaze:
+            self.expand_cond_pose_gaze = nn.Sequential(
+                wn_linear(4, 512),
+                nn.ReLU(),
+                wn_linear(512, shape[0] * shape[1]),
+                                                      )
 
         out = []
 
@@ -411,7 +432,7 @@ class PixelSNAIL(nn.Module):
 
         self.out = nn.Sequential(*out)
 
-    def forward(self, input, condition=None, cache=None):
+    def forward(self, input, condition=None, cond_headpose_gaze=None, cache=None):
         if cache is None:
             cache = {}
         batch, height, width = input.shape
@@ -423,22 +444,30 @@ class PixelSNAIL(nn.Module):
         out = horizontal + vertical
 
         background = self.background[:, :, :height, :].expand(batch, 2, height, width) # 1 x 2 x height x width -> 32 x 2 x height x width
-
-        if condition is not None:
-            if 'condition' in cache:
+        if self.condition or self.cond_headpose_gaze:
+            if 'condition' in cache and (self.condition or self.cond_headpose_gaze):
                 condition = cache['condition']
-                condition = condition[:, :, :height, :]
-
+                condition = condition[:,:,:height,:]
             else:
-                condition = (
-                    F.one_hot(condition, self.n_class)
-                    .permute(0, 3, 1, 2)
-                    .type_as(self.background)
-                )
-                condition = self.cond_resnet(condition)
-                condition = F.interpolate(condition, scale_factor=2) # condition 发大两倍
+                if self.cond_headpose_gaze:
+                    cond_h_g = self.expand_cond_pose_gaze(cond_headpose_gaze)
+                    cond_h_g = cond_h_g.view(batch, 1, self.shape[0], self.shape[1])
+
+                if self.condition:
+                    condition = (
+                        F.one_hot(condition, self.n_class)
+                        .permute(0, 3, 1, 2)
+                        .type_as(self.background)
+                    )
+                    condition = F.interpolate(condition, scale_factor=2) # condition 发大两倍
+                    if self.cond_headpose_gaze:
+                        condition = torch.cat([cond_h_g, condition], 1)
+                else:
+                    condition = cond_h_g
                 cache['condition'] = condition.detach().clone()
                 condition = condition[:, :, :height, :]
+
+                condition = self.cond_resnet(condition)
 
         for block in self.blocks:
             out = block(out, background, condition=condition)

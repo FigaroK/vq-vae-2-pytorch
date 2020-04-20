@@ -1,4 +1,5 @@
 import os
+import cv2
 import pickle
 import h5py
 import numpy as np
@@ -10,11 +11,49 @@ import functools
 import torch
 from torch.utils.data import Dataset
 from torchvision import datasets
+from torchvision.utils import save_image
 import lmdb
 import math
 
 
 CodeRow = namedtuple('CodeRow', ['top', 'bottom', 'label', 'headpose'])
+
+def identity(x):
+    return x
+
+def denormalize(x):
+    return (x * 0.5 + 0.5) * 255
+
+def torch2cv2(x):
+    x = denormalize(x)
+    x = x.cpu().numpy().astype(np.uint8)
+    gray_list = []
+    for i in x:
+        rgb = np.transpose(i, [1,2,0])
+        gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+        gray_list.append(gray[np.newaxis, np.newaxis, :])
+    gray_list = np.vstack(gray_list).astype(np.float32)
+    a = torch.from_numpy(cv2Image(gray_list))
+    save_image(a, "./test.png", normalize=True, range=(-1, 1), nrow=4)
+    return a
+    
+def get_gaze_pose(mode):
+    gaze = np.zeros([2, 4, 4])
+    pitch = np.arange(-30, 50, 20).astype(np.float32)[:, np.newaxis]
+    yaw = np.arange(-30, 50, 20).astype(np.float32)[np.newaxis, :] 
+    pitch_repeat = np.repeat(pitch, 4, axis = 1)[np.newaxis, :]
+    yaw_repeat = np.repeat(yaw, 4, axis = 0)[np.newaxis, :]
+    if mode == 'gaze':
+        gaze_pose = np.vstack([pitch_repeat, yaw_repeat, gaze])
+    if mode == 'pose':
+        gaze_pose = np.vstack([gaze, pitch_repeat, yaw_repeat])
+    if mode == 'all':
+        gaze_pose = np.vstack([pitch_repeat, yaw_repeat, pitch_repeat, yaw_repeat])
+    gaze_pose = np.transpose(gaze_pose.reshape(4, 16), [1,0])
+    a = torch.from_numpy(gaze_pose).to(torch.float32) / 180 * np.pi
+    print(a)
+    print(a.shape)
+    return a
 
 def load_paths_from_txt(txt_paths):
     paths = []
@@ -25,11 +64,33 @@ def load_paths_from_txt(txt_paths):
             paths.extend(data.split('\n'))
     return paths
 
+def d_3(result):
+    result = torch.from_numpy(result)
+    data = torch.zeros([3])
+
+    data[0] = (-1) * (torch.cos(result[0])) * (torch.sin(result[1]))
+
+    data[1] = (-1) * (torch.sin(result[0]))
+
+    data[2] = (-1) * (torch.cos(result[0])) * (torch.cos(result[1]))
+
+    return data  # size 128*3
+
+def d_2(label):
+    theta = np.arcsin((-1) * label[1]) # 以相机为主视人，上正，下负. 输入是单位向量
+    phi = np.arctan2((-1) * label[0], (-1) * label[2]) # 以相机为主视人，向右看是正，左看是-
+    return np.asarray([theta, phi]).astype(np.float32)
+
 def cv2Image(x):
-    if x.ndim == 3 and x.shape[2]==3:
-        x = cv2.cvtColor(x, cv2.COLOR_BGR2GRAY)
     x = (x / 255 - 0.5) / 0.5
-    return x[np.newaxis, :]
+    if x.ndim == 2:
+        return x[np.newaxis, :]
+    return x
+
+def rgb2gray(x):
+    x = np.transpose(x, [1,2,0])
+    x = cv2.cvtColor(x, cv2.COLOR_RGB2GRAY)
+    return cv2Image(x)
 
 class ImageFileDataset(datasets.ImageFolder):
     def __getitem__(self, index):
@@ -43,7 +104,7 @@ class ImageFileDataset(datasets.ImageFolder):
 
 
 class LMDBDataset(Dataset):
-    def __init__(self, path):
+    def __init__(self, path, transform_label=identity):
         self.env = lmdb.open(
             path,
             max_readers=32,
@@ -52,6 +113,7 @@ class LMDBDataset(Dataset):
             readahead=False,
             meminit=False,
         )
+        self.transform_label = transform_label
 
         if not self.env:
             raise IOError('Cannot open lmdb dataset', path)
@@ -67,8 +129,10 @@ class LMDBDataset(Dataset):
             key = str(index).encode('utf-8')
 
             row = pickle.loads(txn.get(key))
+            label = self.transform_label(row.label)
+            headpose = row.headpose
 
-        return torch.from_numpy(row.top), torch.from_numpy(row.bottom), row.label, row.headpose
+        return torch.from_numpy(row.top), torch.from_numpy(row.bottom), label, headpose
 
 # class LMDBDataset(Dataset):
 #     def __init__(self, path):
@@ -118,8 +182,6 @@ def _load_img(path):
     img = Image.open(path)
     return img
 
-def identity(x):
-    return x
 
 def _geth5file(filename, use_face, stats):
     stats["length"] -= 1
@@ -182,23 +244,20 @@ class H5_EYE_dataset(Dataset):
 
     def __getitem__(self, index):
         left = self.dataset[0][index].astype(np.float32)
-        right = self.dataset[1][index].astype(np.float32)
+        # right = self.dataset[1][index].astype(np.float32)
         left_eye_img = self.transform(left)
-        right_eye_img = self.transform(right)
-        left_label = self.label_trans(self.dataset[2][index].astype(np.float32))
-        right_label = self.label_trans(self.dataset[3][index].astype(np.float32))
-        left_headpose = self.dataset[4][index].astype(np.float32)
-        right_headpose = self.dataset[5][index].astype(np.float32)
-        return left_eye_img, right_eye_img, left_label, right_label, left_headpose, right_headpose
+        # right_eye_img = self.transform(right)
+        left_label = self.label_trans(self.dataset[1][index].astype(np.float32))
+        # right_label = self.label_trans(self.dataset[3][index].astype(np.float32))
+        left_headpose = self.dataset[2][index].astype(np.float32)
+        # right_headpose = self.dataset[5][index].astype(np.float32)
+        return left_eye_img, left_label, left_headpose
         
 
 def _eyediap_get_mat(files):
     left_gazes = np.vstack([files[idx]['left_gaze'] for idx in range(len(files))])
     left_headposes = np.vstack([files[idx]['left_headpose'] for idx in range(len(files))])
-    right_gazes = np.vstack([files[idx]['right_gaze'] for idx in range(len(files))])
-    right_headposes = np.vstack([files[idx]['right_headpose'] for idx in range(len(files))])
     images_l = np.vstack([files[idx]['left_eye_img'] for idx in range(len(files))])
-    images_r = np.vstack([files[idx]['right_eye_img'] for idx in range(len(files))])
 
     num_instances = images_l.shape[0]
     # dimension = images_l.shape[1]
@@ -206,5 +265,5 @@ def _eyediap_get_mat(files):
     print ("%s images loaded" % (num_instances))
     print ("shape of 'images' is %s" % (images_l.shape,))
 
-    return images_l, images_r, left_gazes, right_gazes, left_headposes, right_headposes, num_instances
+    return images_l, left_gazes, left_headposes, num_instances
 
