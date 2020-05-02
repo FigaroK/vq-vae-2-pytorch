@@ -4,7 +4,7 @@
         "ckpt": "/disks/disk2/fjl/checkpoint/vq-vae_unity_all/vqvae_best.pt",
         "test_rate": 0.01,
         "resume_model_path": " ",
-        "gpu_id": "1,2",
+        "gpu_id": "0,1",
         "n_loaders_train": 5,
         "n_loaders_test": 2,
         "n_epoch": 50,

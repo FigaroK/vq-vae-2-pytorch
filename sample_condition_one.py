@@ -1,8 +1,5 @@
 import argparse
 import sys
-sys.path.append('/disks/disk2/fjl/Proj/Python_Proj')
-# from gaze_pytorch.dataset import eyediap_dataset
-from gaze_pytorch.utils_old import rad2deg, angle_err
 from dataset import rgb2gray, torch2cv2, H5_EYE_dataset
 import os
 import models
@@ -32,27 +29,6 @@ def sample_model(model, device, batch, size, temperature, condition=None):
             sample = torch.multinomial(prob, 1).squeeze(-1)
             row[:, i, j] = sample
     return row
-
-@torch.no_grad()
-def sample_by_dataset(test_loader, vqvae_model, pixelsnail_top, pixelsnail_bottom, gaze_predictor):
-    loader = tqdm(test_loader)
-    vqvae_model.eval()
-    pixelsnail_top.eval()
-    pixelsnail_bottom.eval()
-    gaze_predictor.eval()
-    err_sum = 0
-    num = 0
-    gaze_pose_list = []
-    for i, (img, label, headpose) in enumerate(loader):
-        img = img.cuda()
-        num += img.shape[0]
-        label = label.cuda()
-        headpose = headpose.cuda()
-        pred_gaze = gaze_predictor(img, headpose)
-        gaze_pose = torch.cat([pred_gaze, headpose], 1)
-        gaze_pose_list.append(gaze_pose.cpu().numpy())
-    gaze_pose_list = np.vstack(gaze_pose_list)
-    print(err_sum / num)
 
 @torch.no_grad()
 def sample_by_dataset(test_loader, vqvae_model, pixelsnail_top, pixelsnail_bottom, gaze_predictor):
@@ -139,10 +115,10 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(prefix_chars='@')
     parser.add_argument('@@batch', type=int, default=64)
-    parser.add_argument('@@vqvae', type=str, default="/disks/disk2/fjl/checkpoint/vq-vae_unity_unityEyes_dis_from_MPII/vqvae_best.pt")
-    parser.add_argument('@@top', type=str, default="/disks/disk2/fjl/checkpoint/vq-vae/pixelsnail/unity_mpii_condition_pos/pixelsnail_top_eye_050.pt")
-    parser.add_argument('@@bottom', type=str, default="/disks/disk2/fjl/checkpoint/vq-vae/pixelsnail/unity_mpii/pixelsnail_bottom_eye_035.pt")
-    parser.add_argument('@@predictor', type=str, default="/disks/disk2/fjl/checkpoint/gaze/cross_single_eye/gazenet_0_0.tar")
+    parser.add_argument('@@vqvae', type=str, default="/4Tdisk/fjl/checkpoint/vq-vae_unity_all/vqvae_best.pt")
+    parser.add_argument('@@top', type=str, default="/4Tdisk/fjl/checkpoint/vq-vae/pixelsnail/unity_mpii_condition_all/pixelsnail_top_eye_006.pt")
+    parser.add_argument('@@bottom', type=str, default="/4Tdisk/fjl/checkpoint/vq-vae/pixelsnail/unity_mpii_condition_all/pixelsnail_bottom_eye_003.pt")
+    parser.add_argument('@@predictor', type=str, default="/4Tdisk/fjl/checkpoint/gaze/cross_single_eye/gazenet_0_0.tar")
     parser.add_argument('@@temp', type=float, default=1.0)
     parser.add_argument('@@gpu', type=str, default='1')
     parser.add_argument('@@gaze', type=str) # gaze(pitch, yaw)
@@ -169,27 +145,27 @@ if __name__ == '__main__':
     #     cond_gazepose = torch.tensor(gaze.extend(pose)).unsqueeze(0)
     #     cond_gazepose = cond_gazepose / 180 * np.pi
     #     cond_gazepose.cuda()
-    # cond_gazepose = get_gaze_pose('pose').to('cuda')
+    cond_gazepose = get_gaze_pose('pose').to('cuda')
     # filename = os.path.join("./sample", args.filename + f"{gaze[0]}_{gaze[1]}_{gaze[2]}_{gaze[3]}.png")
     filename = os.path.join("./sample", args.filename)
 
-    model_vqvae = load_model('vqvae', args.vqvae, device)
+    # model_vqvae = load_model('vqvae', args.vqvae, device)
     model_top = load_model('pixelsnail_top', args.top, device)
     model_bottom = load_model('pixelsnail_bottom', args.bottom, device)
-    model_predictor = torch.load(args.predictor)
-    # test_dataset = eyediap_dataset(glob("/disks/disk2/fjl/dataset/MPII_H5_single_evaluation/P00.h5"))
-    test_dataset = H5_EYE_dataset(glob("/disks/disk2/fjl/dataset/MPII_H5_single_evaluation/P*.h5"))
-    test_loader = torch.utils.data.DataLoader(test_dataset, shuffle=False, batch_size=args.batch)
-    sample_by_dataset(test_loader, model_vqvae, model_top, model_bottom, model_predictor)
+    # model_predictor = torch.load(args.predictor)
+    # # test_dataset = eyediap_dataset(glob("/disks/disk2/fjl/dataset/MPII_H5_single_evaluation/P00.h5"))
+    # test_dataset = H5_EYE_dataset(glob("/disks/disk2/fjl/dataset/MPII_H5_single_evaluation/P*.h5"))
+    # test_loader = torch.utils.data.DataLoader(test_dataset, shuffle=False, batch_size=args.batch)
+    # sample_by_dataset(test_loader, model_vqvae, model_top, model_bottom, model_predictor)
 
 
     
-    # top_sample = sample_model(model_top, device, args.batch, [9, 15], args.temp, condition=cond_gazepose)
-    # bottom_sample = sample_model(
-    #     model_bottom, device, args.batch, [18, 30], args.temp, condition=top_sample
-    # )
+    top_sample = sample_model(model_top, device, args.batch, [9, 15], args.temp, condition=cond_gazepose)
+    bottom_sample = sample_model(
+        model_bottom, device, args.batch, [18, 30], args.temp, condition=top_sample
+    )
 
-    # decoded_sample = model_vqvae.decode_code(top_sample, bottom_sample)
-    # decoded_sample = decoded_sample.clamp(-1, 1)
+    decoded_sample = model_vqvae.decode_code(top_sample, bottom_sample)
+    decoded_sample = decoded_sample.clamp(-1, 1)
 
-    # save_image(decoded_sample, filename, normalize=True, range=(-1, 1), nrow=4)
+    save_image(decoded_sample, filename, normalize=True, range=(-1, 1), nrow=4)

@@ -464,10 +464,10 @@ class PixelSNAIL(nn.Module):
                         condition = torch.cat([cond_h_g, condition], 1)
                 else:
                     condition = cond_h_g
+                condition = self.cond_resnet(condition)
                 cache['condition'] = condition.detach().clone()
                 condition = condition[:, :, :height, :]
 
-                condition = self.cond_resnet(condition)
 
         for block in self.blocks:
             out = block(out, background, condition=condition)

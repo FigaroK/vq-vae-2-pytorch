@@ -148,7 +148,7 @@ if __name__ == '__main__':
 
     if amp is not None:
         model, optimizer = amp.initialize(model, optimizer, opt_level=args.amp)
-    save_path = '/disks/disk2/fjl/checkpoint/vq-vae/pixelsnail/unity_mpii_condition_all'
+    save_path = '/4Tdisk/fjl/checkpoint/vq-vae/pixelsnail/unity_mpii_condition_all_top'
     os.makedirs(save_path, exist_ok=True)
     model = nn.DataParallel(model).to(device)
     scheduler = None
