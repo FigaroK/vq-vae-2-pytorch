@@ -6,6 +6,7 @@ from gaze_pytorch.utils_old import rad2deg, angle_err
 from dataset import rgb2gray, torch2cv2, H5_EYE_dataset
 import os
 import models
+import h5py
 
 import torch
 from torch import nn
@@ -20,14 +21,15 @@ from glob import glob
 
         
 @torch.no_grad()
-def sample_model(model, device, batch, size, temperature, condition=None):
+def sample_model(model, device, batch, size, temperature, condition=None, cond_headpose_gaze=None):
     model.eval()
     row = torch.zeros(batch, *size, dtype=torch.int64).to(device)
     cache = {}
 
     for i in tqdm(range(size[0])):
+    # for i in range(size[0]):
         for j in range(size[1]):
-            out, cache = model(row[:, : i + 1, :], condition=condition, cache=cache) # 采样时，从第一行（第一次值都为0）开始输入，而后输入目标像素之前所有生成过的所有像素。
+            out, cache = model(row[:, : i + 1, :], condition=condition, cond_headpose_gaze=cond_headpose_gaze, cache=cache) # 采样时，从第一行（第一次值都为0）开始输入，而后输入目标像素之前所有生成过的所有像素。
             prob = torch.softmax(out[:, :, i, j] / temperature, 1)
             sample = torch.multinomial(prob, 1).squeeze(-1)
             row[:, i, j] = sample
@@ -35,14 +37,22 @@ def sample_model(model, device, batch, size, temperature, condition=None):
 
 @torch.no_grad()
 def sample_by_dataset(test_loader, vqvae_model, pixelsnail_top, pixelsnail_bottom, gaze_predictor):
-    loader = tqdm(test_loader)
+    # loader = tqdm(test_loader)
+    loader = test_loader
     vqvae_model.eval()
     pixelsnail_top.eval()
     pixelsnail_bottom.eval()
     gaze_predictor.eval()
-    err_sum = 0
+    err_sum_a = 0
+    err_sum_b = 0
+    err_sum_c = 0
     num = 0
+    recon_imgs = []
+    recon_gazes = []
+    pred_gazes = []
+    headposes = []
     for i, (img, label, headpose) in enumerate(loader):
+        print(f"{i} / {len(loader)}")
         img = img.cuda()
         num += img.shape[0]
         label = label.cuda()
@@ -50,15 +60,26 @@ def sample_by_dataset(test_loader, vqvae_model, pixelsnail_top, pixelsnail_botto
         pred_gaze = gaze_predictor(img, headpose)
         cond_gazepose = torch.cat([pred_gaze, headpose], 1)
         top_index = sample_model(pixelsnail_top, device, img.shape[0], [9, 15], args.temp, cond_headpose_gaze=cond_gazepose)
-        bottom_index = sample_model(pixelsnail_bottom, device, args.batch, [18, 30], args.temp, condition=top_index, cond_headpose_gaze=cond_gazepose)
+        bottom_index = sample_model(pixelsnail_bottom, device, img.shape[0], [18, 30], args.temp, condition=top_index, cond_headpose_gaze=cond_gazepose)
         decoded_sample = model_vqvae.decode_code(top_index, bottom_index)
         decoded_sample = decoded_sample.clamp(-1, 1)
+        # save_image(decoded_sample, filename, normalize=True, range=(-1, 1), nrow=4)
         recon_gaze = gaze_predictor(torch2cv2(decoded_sample).cuda(), headpose)
+        recon_imgs.append(torch2cv2(decoded_sample, normalize=False))
+        # recon_gazes.append(recon_gaze.cpu().numpy())
+        pred_gazes.append(pred_gaze.cpu().numpy())
+        headposes.append(headpose.cpu().numpy())
+
         a = rad2deg(angle_err(recon_gaze, pred_gaze))
-        print(a.mean())
+        b = rad2deg(angle_err(recon_gaze, pred_gaze))
+        print('recon pre err: ', a.mean())
         a = a.sum()
-        err_sum += a
-    print(err_sum / num)
+        err_sum_a += a
+    with h5py.File("/disks/disk2/fjl/dataset/mpii_recon.h5", 'w') as f:
+        f['left_gaze'] = np.vstack(pred_gazes)
+        f['left_eye_img'] = np.vstack(recon_imgs)
+        f['left_headpose'] = np.vstack(headposes)
+    print('recon pre err: ', err_sum_a / num)
 
 def load_model(model, checkpoint, device):
     ckpt = torch.load(checkpoint)
@@ -118,10 +139,11 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(prefix_chars='@')
     parser.add_argument('@@batch', type=int, default=64)
+    # parser.add_argument('@@vqvae', type=str, default="/disks/disk2/fjl/checkpoint/vq-vae_unity_unityEyes_dis_from_MPII/vqvae_best.pt")
     parser.add_argument('@@vqvae', type=str, default="/disks/disk2/fjl/checkpoint/vq-vae_unity_unityEyes_dis_from_MPII/vqvae_best.pt")
-    parser.add_argument('@@top', type=str, default="/disks/disk2/fjl/checkpoint/vq-vae/pixelsnail/unity_mpii_condition_pos/pixelsnail_top_eye_050.pt")
-    parser.add_argument('@@bottom', type=str, default="/disks/disk2/fjl/checkpoint/vq-vae/pixelsnail/unity_mpii/pixelsnail_bottom_eye_035.pt")
-    parser.add_argument('@@predictor', type=str, default="/disks/disk2/fjl/checkpoint/gaze/cross_single_eye/gazenet_0_0.tar")
+    parser.add_argument('@@top', type=str, default="/disks/disk2/fjl/checkpoint/vq-vae/pixelsnail/unity_mpii_condition_all/pixelsnail_top_eye_006_20w.pt")
+    parser.add_argument('@@bottom', type=str, default="/disks/disk2/fjl/checkpoint/vq-vae/pixelsnail/unity_mpii_condition_all/pixelsnail_bottom_eye_008.pt")
+    parser.add_argument('@@predictor', type=str, default="/disks/disk2/fjl/checkpoint/gaze/cross_single_eye/gazenet_3_1.tar")
     parser.add_argument('@@temp', type=float, default=1.0)
     parser.add_argument('@@gpu', type=str, default='1')
     parser.add_argument('@@gaze', type=str) # gaze(pitch, yaw)
@@ -156,7 +178,6 @@ if __name__ == '__main__':
     model_top = load_model('pixelsnail_top', args.top, device)
     model_bottom = load_model('pixelsnail_bottom', args.bottom, device)
     model_predictor = torch.load(args.predictor)
-    # test_dataset = eyediap_dataset(glob("/disks/disk2/fjl/dataset/MPII_H5_single_evaluation/P00.h5"))
     test_dataset = H5_EYE_dataset(glob("/disks/disk2/fjl/dataset/MPII_H5_single_evaluation/P*.h5"))
     test_loader = torch.utils.data.DataLoader(test_dataset, shuffle=False, batch_size=args.batch)
     sample_by_dataset(test_loader, model_vqvae, model_top, model_bottom, model_predictor)

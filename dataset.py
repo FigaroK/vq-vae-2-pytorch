@@ -24,7 +24,7 @@ def identity(x):
 def denormalize(x):
     return (x * 0.5 + 0.5) * 255
 
-def torch2cv2(x):
+def torch2cv2(x, normalize=True):
     x = denormalize(x)
     x = x.cpu().numpy().astype(np.uint8)
     gray_list = []
@@ -32,10 +32,15 @@ def torch2cv2(x):
         rgb = np.transpose(i, [1,2,0])
         gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
         gray_list.append(gray[np.newaxis, np.newaxis, :])
-    gray_list = np.vstack(gray_list).astype(np.float32)
-    a = torch.from_numpy(cv2Image(gray_list))
-    save_image(a, "./test.png", normalize=True, range=(-1, 1), nrow=4)
-    return a
+    gray_list = np.vstack(gray_list)
+    if normalize:
+        a = torch.from_numpy(cv2Image(gray_list).astype(np.float32))
+        return a
+    else:
+        a = np.squeeze(gray_list, axis=1)
+        print(a.shape)
+        return a
+    # save_image(a, "./test.png", normalize=True, range=(-1, 1), nrow=4)
     
 def get_gaze_pose(mode):
     gaze = np.zeros([2, 4, 4])
